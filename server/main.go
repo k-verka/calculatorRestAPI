@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"slices"
 
@@ -10,8 +11,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-)
 
+	"database/sql"
+    _ "github.com/lib/pq"
+)
+//GLOBAL
+var db *sql.DB
 // Модели
 type Calculation struct {
 	ID         string `json:"id"`
@@ -37,7 +42,7 @@ func calculateExpression(expression string) (string, error) {
 	}
 	return fmt.Sprintf("%v", result), err
 }
-
+//Методы
 // GET
 func getCalculations(c echo.Context) error {
 	return c.JSON(http.StatusOK, calculations)
@@ -54,6 +59,11 @@ func postCalculations(c echo.Context) error {
 	result, err := calculateExpression(req.Expression)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid expression"})
+	}
+
+	_, err = db.Exec(`INSERT INTO expressions (id, expression, result) VALUES ($1, $2, $3)`, c.Param("id"), req.Expression, result)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "DB insert failed"})
 	}
 
 	calc := Calculation{
@@ -88,7 +98,7 @@ func patchCalculation(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusBadRequest, map[string]string{"error": "Calculation not found"})
-		
+
 }
 
 // DELETE
@@ -97,14 +107,22 @@ func deleteCalculation(c echo.Context) error {
 
 	for i, calculation := range calculations {
 		if calculation.ID == id {
-			calculations = slices.Delete(calculations, i, i + 1)
+			calculations = slices.Delete(calculations, i, i+1)
 			return c.NoContent(http.StatusNoContent)
 		}
 	}
 	return c.JSON(http.StatusBadRequest, map[string]string{"error": "Calculation not found"})
 }
+
 // Точка входа
 func main() {
+	var err error
+	db, err = sql.Open("postgres", "host=db user=postgres password=super0secret0cat0meow dbname=example sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
 	e := echo.New()
 
 	e.Use(middleware.CORS())
@@ -116,5 +134,4 @@ func main() {
 	e.DELETE("/calculations/:id", deleteCalculation)
 
 	e.Start("localhost:8080")
-
 }
